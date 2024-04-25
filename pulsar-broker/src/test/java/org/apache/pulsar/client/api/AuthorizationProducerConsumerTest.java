@@ -175,6 +175,63 @@ public class AuthorizationProducerConsumerTest extends ProducerConsumerBase {
     }
 
     @Test
+    public void testSubscriptionPermission() throws Exception {
+        log.info("-- Starting {} test --", methodName);
+        cleanup();
+        conf.setTopicLevelPoliciesEnabled(false);
+        conf.setAuthorizationProvider(PulsarAuthorizationProvider.class.getName());
+        setup();
+
+        final String jackRole = "jack";
+        final String tomRole = "tom";
+        final String namespace = "my-property/my-ns-sub-auth";
+        final String topicName = "persistent://" + namespace + "/my-topic";
+
+        Authentication adminAuthentication = new ClientAuthentication("superUser");
+        @Cleanup
+        PulsarAdmin superAdmin = spy(
+                PulsarAdmin.builder().serviceHttpUrl(brokerUrl.toString()).authentication(adminAuthentication).build());
+
+        Authentication jackAuthentication = new ClientAuthentication(jackRole);
+        @Cleanup
+        PulsarClient jackClient = PulsarClient.builder().serviceUrl(pulsar.getBrokerServiceUrl())
+                .authentication(jackAuthentication).build();
+
+        Authentication tomAuthentication = new ClientAuthentication(tomRole);
+        @Cleanup
+        PulsarClient tomClient = PulsarClient.builder().serviceUrl(pulsar.getBrokerServiceUrl())
+                .authentication(tomAuthentication).build();
+
+        superAdmin.clusters().createCluster("test", ClusterData.builder().serviceUrl(brokerUrl.toString()).build());
+        superAdmin.tenants().createTenant("my-property",
+                new TenantInfoImpl(Sets.newHashSet(), Sets.newHashSet("test")));
+        superAdmin.namespaces().createNamespace(namespace, Sets.newHashSet("test"));
+        superAdmin.topics().createPartitionedTopic(topicName, 1);
+
+        // jack apply for new subscription `sub`, so admin grant consume permission and subscription permission to subject1
+        superAdmin.topics().grantPermission(topicName, jackRole, Sets.newHashSet(AuthAction.consume));
+        superAdmin.namespaces().grantPermissionOnSubscription(namespace, "sub",
+                Sets.newHashSet(jackRole));
+
+        // as jack get the consume permission, he can create any new subscription `sub1`, `sub2` and so on
+        Consumer<byte[]> consumer = jackClient.newConsumer().topic(topicName).subscriptionName("sub1").subscribe();
+        consumer.close();
+
+        // tom apply for new subscription `sub1`, so admin grant consume permission and subscription permission to subject2
+        superAdmin.topics().grantPermission(topicName, tomRole, Sets.newHashSet(AuthAction.consume));
+        superAdmin.namespaces().grantPermissionOnSubscription(namespace, "sub1",
+                Sets.newHashSet(tomRole));
+
+        // at this time, consumer can't receive any message, because jack don't have the subscription permission for `sub1`
+        try {
+            consumer = jackClient.newConsumer().topic(topicName).subscriptionName("sub1").subscribe();
+            consumer.receive();
+        } catch (PulsarClientException.AuthorizationException e) {
+            fail("reproduce issue with authorization exception: " + e.getMessage());
+        }
+    }
+
+    @Test
     public void testSubscriberPermission() throws Exception {
         log.info("-- Starting {} test --", methodName);
         cleanup();
