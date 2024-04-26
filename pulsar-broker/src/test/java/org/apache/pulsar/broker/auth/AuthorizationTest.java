@@ -230,14 +230,19 @@ public class AuthorizationTest extends MockedPulsarServiceBaseTest {
         assertTrue(auth.canLookup(TopicName.get("persistent://p1/c1/ns1/ds1"), "role1", null));
         assertTrue(auth.canLookup(TopicName.get("persistent://p1/c1/ns1/ds1"), "role2", null));
         try {
+            admin.namespaces().grantPermissionOnSubscription("p1/c1/ns1", "sub1", Sets.newHashSet("role1"));
             assertFalse(auth.canConsume(TopicName.get("persistent://p1/c1/ns1/ds1"), "role1", null, "sub1"));
             fail();
         } catch (Exception ignored) {}
         try {
+            admin.namespaces().grantPermissionOnSubscription("p1/c1/ns1", "sub2", Sets.newHashSet("role2"));
             assertFalse(auth.canConsume(TopicName.get("persistent://p1/c1/ns1/ds1"), "role2", null, "sub2"));
             fail();
         } catch (Exception ignored) {}
 
+        // though we use prefix subscription mode, we still require that the role own the permission.
+        admin.namespaces().grantPermissionOnSubscription("p1/c1/ns1", "role1-sub1", Sets.newHashSet("role1"));
+        admin.namespaces().grantPermissionOnSubscription("p1/c1/ns1", "role2-sub2", Sets.newHashSet("role2"));
         assertTrue(auth.canConsume(TopicName.get("persistent://p1/c1/ns1/ds1"), "role1", null, "role1-sub1"));
         assertTrue(auth.canConsume(TopicName.get("persistent://p1/c1/ns1/ds1"), "role2", null, "role2-sub2"));
         assertTrue(auth.canConsume(TopicName.get("persistent://p1/c1/ns1/ds1"), "pulsar.super_user", null, "role3-sub1"));
