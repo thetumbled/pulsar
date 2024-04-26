@@ -310,6 +310,11 @@ public class AuthorizationProducerConsumerTest extends ProducerConsumerBase {
         // grant topic consume authorization to the subscriptionRole
         tenantAdmin.topics().grantPermission(topicName, subscriptionRole,
                 Collections.singleton(AuthAction.consume));
+        // grant subscription permission to the subscriptionRole
+        tenantAdmin.namespaces().grantPermissionOnSubscription(namespace, subscriptionName,
+                Collections.singleton(subscriptionRole));
+        tenantAdmin.namespaces().grantPermissionOnSubscription(namespace, subscriptionName2,
+                Collections.singleton(subscriptionRole));
 
         replacePulsarClient(PulsarClient.builder()
                 .serviceUrl(pulsar.getBrokerServiceUrl())
@@ -391,6 +396,8 @@ public class AuthorizationProducerConsumerTest extends ProducerConsumerBase {
                 Collections.singleton(otherPrincipal));
         TreeMap<String, Set<String>> permissionOnSubscription = new TreeMap<>();
         permissionOnSubscription.put(subscriptionName, Collections.singleton(otherPrincipal));
+        // we have granted subscription permission of subscriptionName2 to subscriptionRole before.
+        permissionOnSubscription.put(subscriptionName2, Collections.singleton(subscriptionRole));
         Assert.assertEquals(tenantAdmin.namespaces().getPermissionOnSubscription(namespace), permissionOnSubscription);
 
         // now, subscriptionRole doesn't have subscription level access so, it will fail to access subscription
@@ -414,6 +421,8 @@ public class AuthorizationProducerConsumerTest extends ProducerConsumerBase {
                 Sets.newHashSet(otherPrincipal, subscriptionRole));
         TreeMap<String, Set<String>> permissionOnSubscription1 = new TreeMap<>();
         permissionOnSubscription1.put(subscriptionName, Sets.newHashSet(otherPrincipal, subscriptionRole));
+        // we have granted subscription permission of subscriptionName2 to subscriptionRole before.
+        permissionOnSubscription1.put(subscriptionName2, Collections.singleton(subscriptionRole));
         Assert.assertEquals(tenantAdmin.namespaces().getPermissionOnSubscription(namespace), permissionOnSubscription1);
 
         sub1Admin.topics().skipAllMessages(topicName, subscriptionName);
@@ -479,9 +488,12 @@ public class AuthorizationProducerConsumerTest extends ProducerConsumerBase {
         assertEquals(tenantAdmin.topics().getPartitionedTopicList(namespace),
                 Lists.newArrayList(topicName));
 
-        // grant topic consume&produce authorization to the subscriptionRole
+        // grant topic consume&produce authorization and subscription permission
+        // to the subscriptionRole
         superAdmin.topics().grantPermission(topicName, subscriptionRole,
                 Sets.newHashSet(AuthAction.produce, AuthAction.consume));
+        superAdmin.namespaces().grantPermissionOnSubscription(namespace, subscriptionName,
+                Sets.newHashSet(subscriptionRole));
         replacePulsarClient(PulsarClient.builder()
                 .serviceUrl(pulsar.getBrokerServiceUrl())
                 .authentication(subAdminAuthentication));
@@ -778,6 +790,7 @@ public class AuthorizationProducerConsumerTest extends ProducerConsumerBase {
         Assert.assertFalse(authorizationService.canConsume(topicName, role, null, "sub1"));
         authorizationService.grantPermissionAsync(topicName, actions, role, "auth-json").get();
         authorizationService.grantPermissionAsync(topicName, actions, role2, "auth-json").get();
+        authorizationService.grantSubscriptionPermissionAsync(namespaceName, "sub1", Sets.newHashSet(role, role2), "auth-json").get();
         Assert.assertTrue(authorizationService.canProduce(topicName, role, null));
         Assert.assertTrue(authorizationService.canConsume(topicName, role, null, "sub1"));
 
@@ -872,6 +885,9 @@ public class AuthorizationProducerConsumerTest extends ProducerConsumerBase {
         PulsarClient pulsarClientProducerRole = PulsarClient.builder().serviceUrl(lookupUrl)
                 .authentication(authenticationProducerRole).build();
 
+        // as producer will create an initial subscription, it should have permission to create the subscription
+        admin.namespaces().grantPermissionOnSubscription(tn.getNamespace(), initialSubscriptionName,
+                Sets.newHashSet(producerRole));
         Producer<byte[]> producer = ((ProducerBuilderImpl<byte[]>) pulsarClientProducerRole.newProducer())
                 .initialSubscriptionName(initialSubscriptionName)
                 .topic(topic)
