@@ -298,6 +298,7 @@ public class TopicAuthZTest extends AuthZTest {
     @SneakyThrows
     public void testCreateSubscriptionAndUpdateSubscriptionPropertiesAndAnalyzeSubscriptionBacklog() {
         final String random = UUID.randomUUID().toString();
+        final String namespace = "public/default";
         final String topic = "persistent://public/default/" + random;
         final String subject =  UUID.randomUUID().toString();
         final String token = Jwts.builder()
@@ -322,7 +323,9 @@ public class TopicAuthZTest extends AuthZTest {
         for (AuthAction action : AuthAction.values()) {
             superUserAdmin.topics().grantPermission(topic, subject, Set.of(action));
             if (action == AuthAction.consume) {
-                subAdmin.topics().createSubscription(topic, "test-sub" + suffix.incrementAndGet(), MessageId.earliest);
+                String subscriptionName = "test-sub" + suffix.incrementAndGet();
+                superUserAdmin.namespaces().grantPermissionOnSubscription(namespace, subscriptionName, Sets.newHashSet(subject));
+                subAdmin.topics().createSubscription(topic, subscriptionName, MessageId.earliest);
             } else {
                 Assert.assertThrows(PulsarAdminException.NotAuthorizedException.class,
                         () -> subAdmin.topics().createSubscription(topic, "test-sub" + suffix.incrementAndGet(), MessageId.earliest));
@@ -361,8 +364,10 @@ public class TopicAuthZTest extends AuthZTest {
         for (AuthAction action : AuthAction.values()) {
             superUserAdmin.topics().grantPermission(topic, subject, Set.of(action));
             if (action == AuthAction.consume) {
-                subAdmin.topics().updateSubscriptionProperties(topic, "test-sub", properties);
-                subAdmin.topics().getSubscriptionProperties(topic, "test-sub");
+                String subscriptionName = "test-sub";
+                superUserAdmin.namespaces().grantPermissionOnSubscription(namespace, subscriptionName, Sets.newHashSet(subject));
+                subAdmin.topics().updateSubscriptionProperties(topic, subscriptionName, properties);
+                subAdmin.topics().getSubscriptionProperties(topic, subscriptionName);
                 subAdmin.topics().analyzeSubscriptionBacklog(TopicName.get(topic).getPartition(0).getLocalName(), "test-sub", Optional.empty());
             } else {
                 Assert.assertThrows(PulsarAdminException.NotAuthorizedException.class,
@@ -706,6 +711,7 @@ public class TopicAuthZTest extends AuthZTest {
     @SneakyThrows
     public void testDeleteSubscription(boolean partitioned) {
         final String random = UUID.randomUUID().toString();
+        final String namespace = "public/default";
         final String topic = "persistent://public/default/" + random;
         final String subject =  UUID.randomUUID().toString();
         final String token = Jwts.builder()
@@ -734,6 +740,8 @@ public class TopicAuthZTest extends AuthZTest {
         for (AuthAction action : AuthAction.values()) {
             superUserAdmin.topics().grantPermission(topic, subject, Set.of(action));
             if (AuthAction.consume == action) {
+                String subscriptionName = "test-sub";
+                superUserAdmin.namespaces().grantPermissionOnSubscription(namespace, subscriptionName, Sets.newHashSet(subject));
                 subAdmin.topics().deleteSubscription(topic, "test-sub");
             } else {
                 Assert.assertThrows(PulsarAdminException.NotAuthorizedException.class,
@@ -748,6 +756,7 @@ public class TopicAuthZTest extends AuthZTest {
     @SneakyThrows
     public void testSkipAllMessage(boolean partitioned) {
         final String random = UUID.randomUUID().toString();
+        final String namespace = "public/default";
         final String topic = "persistent://public/default/" + random;
         final String subject =  UUID.randomUUID().toString();
         final String token = Jwts.builder()
@@ -773,6 +782,7 @@ public class TopicAuthZTest extends AuthZTest {
         for (AuthAction action : AuthAction.values()) {
             superUserAdmin.topics().grantPermission(topic, subject, Set.of(action));
             if (AuthAction.consume == action) {
+                superUserAdmin.namespaces().grantPermissionOnSubscription(namespace, subName, Sets.newHashSet(subject));
                 subAdmin.topics().skipAllMessages(topic,subName);
             } else {
                 Assert.assertThrows(PulsarAdminException.NotAuthorizedException.class,
@@ -787,6 +797,7 @@ public class TopicAuthZTest extends AuthZTest {
     @SneakyThrows
     public void testSkipMessage() {
         final String random = UUID.randomUUID().toString();
+        final String namespace = "public/default";
         final String topic = "persistent://public/default/" + random;
         final String subject =  UUID.randomUUID().toString();
         final String token = Jwts.builder()
@@ -811,6 +822,7 @@ public class TopicAuthZTest extends AuthZTest {
         for (AuthAction action : AuthAction.values()) {
             superUserAdmin.topics().grantPermission(topic, subject, Set.of(action));
             if (AuthAction.consume == action) {
+                superUserAdmin.namespaces().grantPermissionOnSubscription(namespace, subName, Sets.newHashSet(subject));
                 subAdmin.topics().skipMessages(topic, subName, 1);
             } else {
                 Assert.assertThrows(PulsarAdminException.NotAuthorizedException.class,
@@ -861,6 +873,7 @@ public class TopicAuthZTest extends AuthZTest {
     @SneakyThrows
     public void testResetCursor(boolean partitioned) {
         final String random = UUID.randomUUID().toString();
+        final String namespace = "public/default";
         final String topic = "persistent://public/default/" + random;
         final String subject =  UUID.randomUUID().toString();
         final String token = Jwts.builder()
@@ -885,6 +898,7 @@ public class TopicAuthZTest extends AuthZTest {
         for (AuthAction action : AuthAction.values()) {
             superUserAdmin.topics().grantPermission(topic, subject, Set.of(action));
             if (AuthAction.consume == action) {
+                superUserAdmin.namespaces().grantPermissionOnSubscription(namespace, subName, Sets.newHashSet(subject));
                 subAdmin.topics().resetCursor(topic, subName, System.currentTimeMillis());
             } else {
                 Assert.assertThrows(PulsarAdminException.NotAuthorizedException.class,
@@ -899,6 +913,7 @@ public class TopicAuthZTest extends AuthZTest {
     @SneakyThrows
     public void testResetCursorOnPosition() {
         final String random = UUID.randomUUID().toString();
+        final String namespace = "public/default";
         final String topic = "persistent://public/default/" + random;
         final String subject =  UUID.randomUUID().toString();
         final String token = Jwts.builder()
@@ -923,6 +938,7 @@ public class TopicAuthZTest extends AuthZTest {
         for (AuthAction action : AuthAction.values()) {
             superUserAdmin.topics().grantPermission(topic, subject, Set.of(action));
             if (AuthAction.consume == action) {
+                superUserAdmin.namespaces().grantPermissionOnSubscription(namespace, subName, Sets.newHashSet(subject));
                 subAdmin.topics().resetCursor(topic, subName, MessageId.latest);
             } else {
                 Assert.assertThrows(PulsarAdminException.NotAuthorizedException.class,
@@ -983,6 +999,7 @@ public class TopicAuthZTest extends AuthZTest {
     @SneakyThrows
     public void testPeekNthMessage() {
         final String random = UUID.randomUUID().toString();
+        final String namespace = "public/default";
         final String topic = "persistent://public/default/" + random;
         final String subject =  UUID.randomUUID().toString();
         final String token = Jwts.builder()
@@ -1015,6 +1032,7 @@ public class TopicAuthZTest extends AuthZTest {
         for (AuthAction action : AuthAction.values()) {
             superUserAdmin.topics().grantPermission(topic, subject, Set.of(action));
             if (AuthAction.consume == action) {
+                superUserAdmin.namespaces().grantPermissionOnSubscription(namespace, subName, Sets.newHashSet(subject));
                 subAdmin.topics().peekMessages(topic, subName, 1);
             } else {
                 Assert.assertThrows(PulsarAdminException.NotAuthorizedException.class,
@@ -1075,6 +1093,7 @@ public class TopicAuthZTest extends AuthZTest {
     @SneakyThrows
     public void testExpireMessage() {
         final String random = UUID.randomUUID().toString();
+        final String namespace = "public/default";
         final String topic = "persistent://public/default/" + random;
         final String subject =  UUID.randomUUID().toString();
         final String token = Jwts.builder()
@@ -1112,6 +1131,7 @@ public class TopicAuthZTest extends AuthZTest {
         for (AuthAction action : AuthAction.values()) {
             superUserAdmin.topics().grantPermission(topic, subject, Set.of(action));
             if (AuthAction.consume == action) {
+                superUserAdmin.namespaces().grantPermissionOnSubscription(namespace, subName, Sets.newHashSet(subject));
                 subAdmin.topics().expireMessages(topic, subName, 1);
             } else {
                 Assert.assertThrows(PulsarAdminException.NotAuthorizedException.class,
@@ -1127,6 +1147,7 @@ public class TopicAuthZTest extends AuthZTest {
     public void testExpireMessageByPosition() {
         final String random = UUID.randomUUID().toString();
         final String topic = "persistent://public/default/" + random;
+        final String namespace = "public/default";
         final String subject =  UUID.randomUUID().toString();
         final String token = Jwts.builder()
                 .claim("sub", subject).signWith(SECRET_KEY).compact();
@@ -1163,6 +1184,7 @@ public class TopicAuthZTest extends AuthZTest {
         for (AuthAction action : AuthAction.values()) {
             superUserAdmin.topics().grantPermission(topic, subject, Set.of(action));
             if (AuthAction.consume == action) {
+                superUserAdmin.namespaces().grantPermissionOnSubscription(namespace, subName, Sets.newHashSet(subject));
                 subAdmin.topics().expireMessages(topic, subName, MessageId.earliest, false);
             } else {
                 Assert.assertThrows(PulsarAdminException.NotAuthorizedException.class,
