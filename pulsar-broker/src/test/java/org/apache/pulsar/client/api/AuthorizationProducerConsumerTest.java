@@ -174,6 +174,10 @@ public class AuthorizationProducerConsumerTest extends ProducerConsumerBase {
         log.info("-- Exiting {} test --", methodName);
     }
 
+    /**
+     * verify new permission check for subscription
+     * @throws Exception
+     */
     @Test
     public void testSubscriptionPermission() throws Exception {
         log.info("-- Starting {} test --", methodName);
@@ -204,7 +208,7 @@ public class AuthorizationProducerConsumerTest extends ProducerConsumerBase {
 
         superAdmin.clusters().createCluster("test", ClusterData.builder().serviceUrl(brokerUrl.toString()).build());
         superAdmin.tenants().createTenant("my-property",
-                new TenantInfoImpl(Sets.newHashSet(), Sets.newHashSet("test")));
+                new TenantInfoImpl(new HashSet<>(), Sets.newHashSet("test")));
         superAdmin.namespaces().createNamespace(namespace, Sets.newHashSet("test"));
         superAdmin.topics().createPartitionedTopic(topicName, 1);
 
@@ -213,19 +217,32 @@ public class AuthorizationProducerConsumerTest extends ProducerConsumerBase {
         superAdmin.namespaces().grantPermissionOnSubscription(namespace, "sub",
                 Sets.newHashSet(jackRole));
 
-        // as jack get the consume permission, he can create any new subscription `sub1`, `sub2` and so on
-        Consumer<byte[]> consumer = jackClient.newConsumer().topic(topicName).subscriptionName("sub1").subscribe();
-        consumer.close();
+        // jack can create new subscription `sub` with subscription permission
+        Consumer<byte[]> consumer;
+        try {
+            consumer = jackClient.newConsumer().topic(topicName).subscriptionName("sub").subscribe();
+            consumer.close();
+        } catch (PulsarClientException.AuthorizationException e) {
+            fail("reproduce issue with authorization exception: " + e.getMessage());
+        }
+
+        // though jack get the consume permission, he can't create any new subscription `sub1` without subscription permission
+        try {
+            consumer = jackClient.newConsumer().topic(topicName).subscriptionName("sub1").subscribe();
+            consumer.close();
+        } catch (PulsarClientException.AuthorizationException e) {
+            // we do not allow to create new subscription without subscription permission
+        }
 
         // tom apply for new subscription `sub1`, so admin grant consume permission and subscription permission to subject2
         superAdmin.topics().grantPermission(topicName, tomRole, Sets.newHashSet(AuthAction.consume));
         superAdmin.namespaces().grantPermissionOnSubscription(namespace, "sub1",
                 Sets.newHashSet(tomRole));
 
-        // at this time, consumer can't receive any message, because jack don't have the subscription permission for `sub1`
+        // tom can create new subscription `sub1` with subscription permission
         try {
-            consumer = jackClient.newConsumer().topic(topicName).subscriptionName("sub1").subscribe();
-            consumer.receive();
+            consumer = tomClient.newConsumer().topic(topicName).subscriptionName("sub1").subscribe();
+            consumer.close();
         } catch (PulsarClientException.AuthorizationException e) {
             fail("reproduce issue with authorization exception: " + e.getMessage());
         }
