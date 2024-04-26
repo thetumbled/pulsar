@@ -278,9 +278,11 @@ public class ProxyWithAuthorizationTest extends ProducerConsumerBase {
 
         initializeCluster(admin, namespaceName);
 
+        String subscriptionName = "my-subscriber-name";
+        admin.namespaces().grantPermissionOnSubscription(namespaceName, subscriptionName, Sets.newHashSet("Client"));
         Consumer<byte[]> consumer = proxyClient.newConsumer()
                 .topic("persistent://my-tenant/my-ns/my-topic1")
-                .subscriptionName("my-subscriber-name").subscribe();
+                .subscriptionName(subscriptionName).subscribe();
 
         Producer<byte[]> producer = proxyClient.newProducer(Schema.BYTES)
                 .topic("persistent://my-tenant/my-ns/my-topic1").create();
@@ -339,8 +341,10 @@ public class ProxyWithAuthorizationTest extends ProducerConsumerBase {
         }
 
         try {
+            String subscriptionName = "my-subscriber-name";
+            admin.namespaces().grantPermissionOnSubscription(namespaceName, subscriptionName, Sets.newHashSet("Client"));
             proxyClient.newConsumer().topic("persistent://my-tenant/my-ns/my-topic1")
-                    .subscriptionName("my-subscriber-name").subscribe();
+                    .subscriptionName(subscriptionName).subscribe();
             if (hostnameVerificationEnabled) {
                 Assert.fail("Connection should be failed due to hostnameVerification enabled");
             }
@@ -398,8 +402,10 @@ public class ProxyWithAuthorizationTest extends ProducerConsumerBase {
         }
 
         try {
+            String subscriptionName = "my-subscriber-name";
+            admin.namespaces().grantPermissionOnSubscription(namespaceName, subscriptionName, Sets.newHashSet("Client"));
             proxyClient.newConsumer().topic("persistent://my-tenant/my-ns/my-topic1")
-                    .subscriptionName("my-subscriber-name").subscribe();
+                    .subscriptionName(subscriptionName).subscribe();
             if (hostnameVerificationEnabled) {
                 Assert.fail("Connection should be failed due to hostnameVerification enabled");
             }
@@ -418,7 +424,7 @@ public class ProxyWithAuthorizationTest extends ProducerConsumerBase {
      * This test verifies whether the Client and Proxy honor the protocols and ciphers specified. Details description of
      * test cases can be found in protocolsCiphersProviderCodecProvider
      */
-    @Test(dataProvider = "protocolsCiphersProvider", timeOut = 5000)
+    @Test(dataProvider = "protocolsCiphersProvider", timeOut = 10000)
     public void tlsCiphersAndProtocols(Set<String> tlsCiphers, Set<String> tlsProtocols, boolean expectFailure)
             throws Exception {
         log.info("-- Starting {} test --", methodName);
@@ -482,9 +488,11 @@ public class ProxyWithAuthorizationTest extends ProducerConsumerBase {
         try {
             @Cleanup
             PulsarClient proxyClient = createPulsarClient("pulsar://localhost:" + proxyService.getListenPortTls().get(), PulsarClient.builder());
+            String subscriptionName = "my-subscriber-name";
+            admin.namespaces().grantPermissionOnSubscription(namespaceName, subscriptionName, Sets.newHashSet("Client"));
             Consumer<byte[]> consumer = proxyClient.newConsumer()
                     .topic("persistent://my-tenant/my-ns/my-topic1")
-                    .subscriptionName("my-subscriber-name").subscribe();
+                    .subscriptionName(subscriptionName).subscribe();
 
             if (expectFailure) {
                 Assert.fail("Failure expected for this test case");
@@ -532,10 +540,11 @@ public class ProxyWithAuthorizationTest extends ProducerConsumerBase {
         String namespaceName = "my-tenant/my-ns";
 
         initializeCluster(admin, namespaceName);
-
+        String subscriptionName = "my-subscriber-name";
+        admin.namespaces().grantPermissionOnSubscription(namespaceName, subscriptionName, Sets.newHashSet("Client"));
         Consumer<byte[]> consumer = proxyClient.newConsumer()
                 .topic("persistent://my-tenant/my-ns/my-topic1")
-                .subscriptionName("my-subscriber-name").subscribe();
+                .subscriptionName(subscriptionName).subscribe();
 
         Producer<byte[]> producer = proxyClient.newProducer(Schema.BYTES)
                 .topic("persistent://my-tenant/my-ns/my-topic1").create();
