@@ -219,20 +219,11 @@ public class TopicTransactionBuffer extends TopicTransactionBufferState implemen
         } else {
             CompletableFuture<Void> completableFuture = new CompletableFuture<>();
             transactionBufferFuture.thenRun(() -> {
-                if (checkIfNoSnapshot()) {
-                    snapshotAbortedTxnProcessor.takeAbortedTxnsSnapshot(maxReadPosition).thenRun(() -> {
-                        if (changeToReadyStateFromNoSnapshot()) {
-                            timer.newTimeout(TopicTransactionBuffer.this,
-                                    takeSnapshotIntervalTime, TimeUnit.MILLISECONDS);
-                        }
-                        completableFuture.complete(null);
-                    }).exceptionally(exception -> {
-                        log.error("Topic {} failed to take snapshot", this.topic.getName());
-                        completableFuture.completeExceptionally(exception);
-                        return null;
-                    });
-                } else {
+                if (checkIfNoSnapshot() || checkIfReady()) {
                     completableFuture.complete(null);
+                } else {
+                    completableFuture.completeExceptionally(new BrokerServiceException
+                            .ServiceUnitNotReadyException("TransactionBuffer recover failed"));
                 }
             }).exceptionally(exception -> {
                 log.error("Topic {}: TransactionBuffer recover failed", this.topic.getName(), exception.getCause());
@@ -241,6 +232,19 @@ public class TopicTransactionBuffer extends TopicTransactionBufferState implemen
             });
             return completableFuture;
         }
+    }
+
+    @Override
+    public CompletableFuture<Void> takeFirstSnapshotIfNeed(boolean enableTxn) {
+        CompletableFuture<Void> completableFuture = new CompletableFuture<>();
+        if (enableTxn && checkIfNoSnapshot()) {
+            this.snapshotAbortedTxnProcessor.takeAbortedTxnsSnapshot(maxReadPosition)
+                    .thenRun(() -> changeToReadyStateFromNoSnapshot())
+                    .thenAccept(__ -> completableFuture.complete(null));
+        } else {
+            completableFuture.complete(null);
+        }
+        return completableFuture;
     }
 
     @Override
