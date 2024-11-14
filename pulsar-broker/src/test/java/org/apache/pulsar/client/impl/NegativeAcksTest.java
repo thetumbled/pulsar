@@ -325,6 +325,51 @@ public class NegativeAcksTest extends ProducerConsumerBase {
     }
 
     @Test
+    public void testNegativeAcksWithBatch() throws Exception {
+        cleanup();
+        conf.setAcknowledgmentAtBatchIndexLevelEnabled(true);
+        setup();
+        String topic = BrokerTestUtil.newUniqueName("testNegativeAcksWithBatch");
+
+        @Cleanup
+        Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING)
+                .topic(topic)
+                .subscriptionName("sub1")
+                .acknowledgmentGroupTime(0, TimeUnit.SECONDS)
+                .subscriptionType(SubscriptionType.Shared)
+                .enableBatchIndexAcknowledgment(true)
+                .negativeAckRedeliveryDelay(3, TimeUnit.SECONDS)
+                .subscribe();
+
+        @Cleanup
+        Producer<String> producer = pulsarClient.newProducer(Schema.STRING)
+                .topic(topic)
+                .create();
+        // send two messages in the same batch
+        producer.sendAsync("test-0");
+        producer.sendAsync("test-1");
+        producer.flush();
+
+        // negative ack the first message
+        consumer.negativeAcknowledge(consumer.receive());
+        // wait for 2s, negative ack the second message
+        Thread.sleep(2000);
+        consumer.negativeAcknowledge(consumer.receive());
+
+        // wait for redelivery
+        Message<String> msg1 = consumer.receive();
+        long time1 = System.currentTimeMillis();
+        assertEquals(msg1.getValue(), "test-0");
+        Message<String> msg2 = consumer.receive();
+        long time2 = System.currentTimeMillis();
+        assertEquals(msg2.getValue(), "test-1");
+
+        // assert that the time duration between the two messages is greater than 1s,
+        // as the second nack is called 2s after the first nack
+        assertTrue(time2 - time1 >= 1000);
+    }
+
+    @Test
     public void testNegativeAcksWithBatchAckEnabled() throws Exception {
         cleanup();
         conf.setAcknowledgmentAtBatchIndexLevelEnabled(true);
