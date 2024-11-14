@@ -2187,6 +2187,7 @@ public class ConsumerImpl<T> extends ConsumerBase<T> implements ConnectionHandle
                 if (!sendToDLQ) {
                     return new MessageIdData()
                             .setPartition(messageId.getPartitionIndex())
+                            .setBatchIndex(messageId.getBatchIndex())
                             .setLedgerId(messageId.getLedgerId())
                             .setEntryId(messageId.getEntryId());
                 }
@@ -2740,7 +2741,7 @@ public class ConsumerImpl<T> extends ConsumerBase<T> implements ConnectionHandle
         int messagesFromQueue = 0;
         Message<T> peek = incomingMessages.peek();
         if (peek != null) {
-            MessageIdAdv messageId = MessageIdAdvUtils.discardBatch(peek.getMessageId());
+            MessageId messageId = NegativeAcksTracker.discardPartitionIndex(peek.getMessageId());
             if (!messageIds.contains(messageId)) {
                 // first message is not expired, then no message is expired in queue.
                 return 0;
@@ -2751,7 +2752,7 @@ public class ConsumerImpl<T> extends ConsumerBase<T> implements ConnectionHandle
             while (message != null) {
                 decreaseIncomingMessageSize(message);
                 messagesFromQueue++;
-                MessageIdAdv id = MessageIdAdvUtils.discardBatch(message.getMessageId());
+                MessageId id = NegativeAcksTracker.discardPartitionIndex(message.getMessageId());
                 if (!messageIds.contains(id)) {
                     messageIds.add(id);
                     break;

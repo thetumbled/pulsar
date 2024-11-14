@@ -32,14 +32,15 @@ import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.MessageIdAdv;
 import org.apache.pulsar.client.api.RedeliveryBackoff;
 import org.apache.pulsar.client.impl.conf.ConsumerConfigurationData;
-import org.apache.pulsar.common.util.collections.ConcurrentLongLongPairHashMap;
+import org.apache.pulsar.common.util.collections.ConcurrentTripleLong2LongHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 class NegativeAcksTracker implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(NegativeAcksTracker.class);
 
-    private ConcurrentLongLongPairHashMap nackedMessages = null;
+    // map (ledgerId, entryId, batchIndex) -> timestamp
+    private ConcurrentTripleLong2LongHashMap nackedMessages = null;
 
     private final ConsumerBase<?> consumer;
     private final Timer timer;
@@ -51,7 +52,7 @@ class NegativeAcksTracker implements Closeable {
 
     // Set a min delay to allow for grouping nacks within a single batch
     private static final long MIN_NACK_DELAY_NANOS = TimeUnit.MILLISECONDS.toNanos(100);
-    private static final long NON_PARTITIONED_TOPIC_PARTITION_INDEX = Long.MAX_VALUE;
+    private static final int DUMMY_PARTITION_INDEX = -2;
 
     public NegativeAcksTracker(ConsumerBase<?> consumer, ConsumerConfigurationData<?> conf) {
         this.consumer = consumer;
@@ -77,11 +78,14 @@ class NegativeAcksTracker implements Closeable {
         // Group all the nacked messages into one single re-delivery request
         Set<MessageId> messagesToRedeliver = new HashSet<>();
         long now = System.nanoTime();
-        nackedMessages.forEach((ledgerId, entryId, partitionIndex, timestamp) -> {
+        nackedMessages.forEach((ledgerId, entryId, batchIndex, timestamp) -> {
             if (timestamp < now) {
-                MessageId msgId = new MessageIdImpl(ledgerId, entryId,
-                        // need to covert non-partitioned topic partition index to -1
-                        (int) (partitionIndex == NON_PARTITIONED_TOPIC_PARTITION_INDEX ? -1 : partitionIndex));
+                MessageId msgId;
+                if (batchIndex == -1) {
+                    msgId = new MessageIdImpl(ledgerId, entryId, -1);
+                } else {
+                    msgId = new BatchMessageIdImpl(ledgerId, entryId, -1, (int) batchIndex);
+                }
                 addChunkedMessageIdsAndRemoveFromSequenceMap(msgId, messagesToRedeliver, this.consumer);
                 messagesToRedeliver.add(msgId);
             }
@@ -89,8 +93,9 @@ class NegativeAcksTracker implements Closeable {
 
         if (!messagesToRedeliver.isEmpty()) {
             for (MessageId messageId : messagesToRedeliver) {
-                nackedMessages.remove(((MessageIdImpl) messageId).getLedgerId(),
-                        ((MessageIdImpl) messageId).getEntryId());
+                MessageIdAdv messageIdAdv = (MessageIdAdv) messageId;
+                nackedMessages.remove(messageIdAdv.getLedgerId(), messageIdAdv.getEntryId(),
+                        messageIdAdv.getBatchIndex());
             }
             consumer.onNegativeAcksSend(messagesToRedeliver);
             log.info("[{}] {} messages will be re-delivered", consumer, messagesToRedeliver.size());
@@ -110,10 +115,7 @@ class NegativeAcksTracker implements Closeable {
 
     private synchronized void add(MessageId messageId, int redeliveryCount) {
         if (nackedMessages == null) {
-            nackedMessages = ConcurrentLongLongPairHashMap.newBuilder()
-                    .autoShrink(true)
-                    .concurrencyLevel(1)
-                    .build();
+            nackedMessages = new ConcurrentTripleLong2LongHashMap();
         }
 
         long backoffNs;
@@ -122,14 +124,9 @@ class NegativeAcksTracker implements Closeable {
         } else {
             backoffNs = nackDelayNanos;
         }
-        MessageIdAdv messageIdAdv = MessageIdAdvUtils.discardBatch(messageId);
-        // ConcurrentLongLongPairHashMap requires the key and value >=0.
-        // partitionIndex is -1 if the message is from a non-partitioned topic, but we don't use
-        // partitionIndex actually, so we can set it to Long.MAX_VALUE in the case of non-partitioned topic to
-        // avoid exception from ConcurrentLongLongPairHashMap.
+        MessageIdAdv messageIdAdv = (MessageIdAdv) messageId;
         nackedMessages.put(messageIdAdv.getLedgerId(), messageIdAdv.getEntryId(),
-                messageIdAdv.getPartitionIndex() >= 0 ? messageIdAdv.getPartitionIndex() :
-                        NON_PARTITIONED_TOPIC_PARTITION_INDEX, System.nanoTime() + backoffNs);
+                messageIdAdv.getBatchIndex(), System.nanoTime() + backoffNs);
 
         if (this.timeout == null) {
             // Schedule a task and group all the redeliveries for same period. Leave a small buffer to allow for
@@ -138,9 +135,28 @@ class NegativeAcksTracker implements Closeable {
         }
     }
 
+    /**
+     * Discard the partition index from the message id.
+     * @param messageId
+     * @return
+     */
+    static public MessageId discardPartitionIndex(MessageId messageId) {
+        if (messageId instanceof BatchMessageIdImpl) {
+            BatchMessageIdImpl batchMessageId = (BatchMessageIdImpl) messageId;
+            return new BatchMessageIdImpl(batchMessageId.getLedgerId(), batchMessageId.getEntryId(),
+                    DUMMY_PARTITION_INDEX, batchMessageId.getBatchIndex(), batchMessageId.getBatchSize(),
+                    batchMessageId.getAckSet());
+        } else if (messageId instanceof MessageIdImpl) {
+            MessageIdImpl messageID = (MessageIdImpl) messageId;
+            return new MessageIdImpl(messageID.getLedgerId(), messageID.getEntryId(), DUMMY_PARTITION_INDEX);
+        } else {
+            return messageId;
+        }
+    }
+
     @VisibleForTesting
     Optional<Long> getNackedMessagesCount() {
-        return Optional.ofNullable(nackedMessages).map(ConcurrentLongLongPairHashMap::size);
+        return Optional.ofNullable(nackedMessages).map(ConcurrentTripleLong2LongHashMap::size);
     }
 
     @Override
