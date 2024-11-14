@@ -82,9 +82,9 @@ class NegativeAcksTracker implements Closeable {
             if (timestamp < now) {
                 MessageId msgId;
                 if (batchIndex == -1) {
-                    msgId = new MessageIdImpl(ledgerId, entryId, -1);
+                    msgId = new MessageIdImpl(ledgerId, entryId, DUMMY_PARTITION_INDEX);
                 } else {
-                    msgId = new BatchMessageIdImpl(ledgerId, entryId, -1, (int) batchIndex);
+                    msgId = new BatchMessageIdImpl(ledgerId, entryId, DUMMY_PARTITION_INDEX, (int) batchIndex);
                 }
                 addChunkedMessageIdsAndRemoveFromSequenceMap(msgId, messagesToRedeliver, this.consumer);
                 messagesToRedeliver.add(msgId);
