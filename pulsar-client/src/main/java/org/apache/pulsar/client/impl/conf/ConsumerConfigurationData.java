@@ -156,6 +156,15 @@ public class ConsumerConfigurationData<T> implements Serializable, Cloneable {
     private long negativeAckRedeliveryDelayMicros = TimeUnit.MINUTES.toMicros(1);
 
     @ApiModelProperty(
+            name = "negativeAckPrecisionBitCnt",
+            value = "The redelivery time precision bit count. The lower bits of the redelivery time will be\n" +
+                    "trimmed to reduce the memory occupation. The default value is 8, which means the redelivery time\n" +
+                    "will be bucketed by 256ms. In worst cases, the redelivery time will be 256ms earlier(no later)\n" +
+                    "than the expected time. If the value is 0, the redelivery time will be accurate to ms."
+    )
+    private int negativeAckPrecisionBitCnt = 8;
+
+    @ApiModelProperty(
             name = "maxTotalReceiverQueueSizeAcrossPartitions",
             value = "The max total receiver queue size across partitions.\n"
                     + "\n"
