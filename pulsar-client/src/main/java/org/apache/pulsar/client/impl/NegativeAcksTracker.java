@@ -24,7 +24,6 @@ import io.netty.util.Timeout;
 import io.netty.util.Timer;
 import java.io.Closeable;
 import java.util.HashSet;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 

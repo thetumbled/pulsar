@@ -2187,7 +2187,6 @@ public class ConsumerImpl<T> extends ConsumerBase<T> implements ConnectionHandle
                 if (!sendToDLQ) {
                     return new MessageIdData()
                             .setPartition(messageId.getPartitionIndex())
-                            .setBatchIndex(messageId.getBatchIndex())
                             .setLedgerId(messageId.getLedgerId())
                             .setEntryId(messageId.getEntryId());
                 }
