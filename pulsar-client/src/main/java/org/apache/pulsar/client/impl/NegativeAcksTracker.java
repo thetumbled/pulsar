@@ -79,7 +79,7 @@ class NegativeAcksTracker implements Closeable {
         // Group all the nacked messages into one single re-delivery request
         Set<MessageId> messagesToRedeliver = new HashSet<>();
         long currentTimestamp = System.currentTimeMillis();
-        for(long timestamp : nackedMessages.keySet()) {
+        for (long timestamp : nackedMessages.keySet()) {
             if (timestamp > currentTimestamp) {
                 // We are done with all the messages that need to be redelivered
                 break;
@@ -111,7 +111,17 @@ class NegativeAcksTracker implements Closeable {
             consumer.redeliverUnacknowledgedMessages(messagesToRedeliver);
         }
 
-        this.timeout = timer.newTimeout(this::triggerRedelivery, timerIntervalNanos, TimeUnit.NANOSECONDS);
+        if (!nackedMessages.isEmpty()) {
+            long nextTriggerTimestamp = nackedMessages.firstLongKey();
+            long delayMs = Math.max(nextTriggerTimestamp - currentTimestamp, 0);
+            if (delayMs > 0) {
+                this.timeout = timer.newTimeout(this::triggerRedelivery, delayMs, TimeUnit.MILLISECONDS);
+            } else {
+                this.timeout = timer.newTimeout(this::triggerRedelivery, 0, TimeUnit.MILLISECONDS);
+            }
+        } else {
+            this.timeout = null;
+        }
     }
 
     public synchronized void add(MessageId messageId) {
@@ -160,7 +170,7 @@ class NegativeAcksTracker implements Closeable {
         if (this.timeout == null) {
             // Schedule a task and group all the redeliveries for same period. Leave a small buffer to allow for
             // nack immediately following the current one will be batched into the same redeliver request.
-            this.timeout = timer.newTimeout(this::triggerRedelivery, timerIntervalNanos, TimeUnit.NANOSECONDS);
+            this.timeout = timer.newTimeout(this::triggerRedelivery, backoffMs, TimeUnit.MILLISECONDS);
         }
     }
 
