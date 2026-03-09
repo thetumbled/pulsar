@@ -46,6 +46,17 @@ public class InMemoryDelayedDeliveryTracker extends AbstractDelayedDeliveryTrack
     protected final Long2ObjectSortedMap<Long2ObjectSortedMap<Roaring64Bitmap>>
             delayedMessageMap = new Long2ObjectAVLTreeMap<>();
 
+    /**
+     * Roaring64Bitmap uses ArrayContainer + BitmapContainer by default; RunContainer is not used
+     * unless runOptimize() is called. Pulsar entry IDs are often consecutive, so we periodically
+     * run runOptimize() when the bitmap looks dense (min/max range close to cardinality).
+     */
+    private static final int MIN_CARDINALITY_FOR_RUN_OPTIMIZE = 64;
+    /** Only consider runOptimize when (max - min + 1) <= cardinality * DENSITY_THRESHOLD. */
+    private static final double RUN_OPTIMIZE_DENSITY_THRESHOLD = 1.5;
+    /** Trigger runOptimize check every this many adds per (timestamp, ledgerId) bitmap. */
+    private static final int RUN_OPTIMIZE_BATCH_SIZE = 256;
+
     // If we detect that all messages have fixed delay time, such that the delivery is
     // always going to be in FIFO order, then we can avoid pulling all the messages in
     // tracker. Instead, we use the lookahead for detection and pause the read from
@@ -113,6 +124,27 @@ public class InMemoryDelayedDeliveryTracker extends AbstractDelayedDeliveryTrack
         return timestamp & (-1L << bits);
     }
 
+    /**
+     * Calls runOptimize() on the bitmap only when entry IDs look consecutive (dense), so that
+     * RunContainer can reduce memory. Avoids runOptimize when data is sparse, where it could
+     * hurt performance.
+     */
+    private static void runOptimizeIfBeneficial(Roaring64Bitmap bitmap) {
+        if (bitmap == null || bitmap.isEmpty()) {
+            return;
+        }
+        long cardinality = bitmap.getLongCardinality();
+        if (cardinality < MIN_CARDINALITY_FOR_RUN_OPTIMIZE) {
+            return;
+        }
+        long min = bitmap.first();
+        long max = bitmap.last();
+        long range = max - min + 1;
+        if (range <= (long) (cardinality * RUN_OPTIMIZE_DENSITY_THRESHOLD)) {
+            bitmap.runOptimize();
+        }
+    }
+
     @Override
     public boolean addMessage(long ledgerId, long entryId, long deliverAt) {
         if (deliverAt < 0 || deliverAt <= getCutoffTime()) {
@@ -126,9 +158,13 @@ public class InMemoryDelayedDeliveryTracker extends AbstractDelayedDeliveryTrack
         }
 
         long timestamp = trimLowerBit(deliverAt, timestampPrecisionBitCnt);
-        delayedMessageMap.computeIfAbsent(timestamp, k -> new Long2ObjectRBTreeMap<>())
-                .computeIfAbsent(ledgerId, k -> new Roaring64Bitmap())
-                .add(entryId);
+        Long2ObjectSortedMap<Roaring64Bitmap> ledgerMap =
+                delayedMessageMap.computeIfAbsent(timestamp, k -> new Long2ObjectRBTreeMap<>());
+        Roaring64Bitmap bitmap = ledgerMap.computeIfAbsent(ledgerId, k -> new Roaring64Bitmap());
+        bitmap.add(entryId);
+        if (bitmap.getLongCardinality() % RUN_OPTIMIZE_BATCH_SIZE == 0) {
+            runOptimizeIfBeneficial(bitmap);
+        }
         delayedMessagesCount.incrementAndGet();
 
         updateTimer();
@@ -199,6 +235,7 @@ public class InMemoryDelayedDeliveryTracker extends AbstractDelayedDeliveryTrack
                     }
                     delayedMessagesCount.addAndGet(-n);
                     n = 0;
+                    runOptimizeIfBeneficial(entryIds);
                 }
                 if (n <= 0) {
                     break;
